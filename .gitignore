@@ -1,0 +1,35 @@
+# Базы данных SQLite 
+*.db
+*.sqlite3
+
+# Виртуальное окружение
+car_detection_env/
+.venv/
+
+# Кэш Python
+__pycache__/
+*.pyc
+
+# Логи и база MLflow, сырой датасет
+mlruns/
+/weights/
+mlflow.db
+runs/
+data/train/
+data/valid/
+data/test/
+*.cache
+
+#Тренировка модели
+train_mlflow.py
+yolov8n.pt
+
+# Тяжелые медиафайлы 
+data/videos/
+data/outputvideos/
+*.mp4
+*.avi
+
+# Временные файлы
+*.png
+*.jpg

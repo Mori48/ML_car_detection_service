@@ -1,0 +1,19 @@
+# Виртуальное окружение
+.venv/
+car_detection_env/
+
+# MLflow и результаты экспериментов
+mlruns/
+mlflow.db
+runs/   
+
+# Датасет и временные файлы
+data/
+*.png
+*.jpg
+
+# Кэш Python и Git
+__pycache__/
+*.pyc
+.git/
+.gitignore
