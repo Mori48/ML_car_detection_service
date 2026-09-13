@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+aiofiles
+sqlalchemy
+aiosqlite
+gradio
+requests
+opencv-python-headless
+ultralytics
+imageio-ffmpeg
+pydantic

@@ -1,6 +1,5 @@
-import os
 from pathlib import Path
-
+import os
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -13,7 +12,7 @@ MODEL_PATH = BASE_DIR / "data" / "weights" / "best.pt"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-API_URL = "http://127.0.0.1:8000"
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "app.db"
 DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"

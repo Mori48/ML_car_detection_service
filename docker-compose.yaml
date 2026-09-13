@@ -1,0 +1,26 @@
+services:
+  # Бэкенд на FastAPI
+  backend:
+    build: .
+    container_name: car_backend
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data  
+    environment:
+      - API_URL=http://backend:8000
+
+  # Фронтенд на Gradio
+  frontend:
+    build: .
+    container_name: car_frontend
+    command: python -m frontend.app
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./data:/app/data  
+    environment:
+      - API_URL=http://backend:8000  # Gradio обращается к контейнеру backend по имени
+    depends_on:
+      - backend

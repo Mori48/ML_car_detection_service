@@ -131,7 +131,7 @@ with gr.Blocks(title="Vehicle Tracking & Detection") as demo:
 
 if __name__ == "__main__":
     demo.launch(
-        server_name="127.0.0.1",
+        server_name="0.0.0.0",#Docker
         server_port=7860,
         allowed_paths=[str(OUTPUT_DIR.resolve())],
     )

@@ -7,13 +7,14 @@ from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-
+import gradio as gr
 from backend.db.database import init_db, get_db
 from backend.db.models import VideoProcessingLog, ProcessingStatus
 from backend.schemas import VideoProcessResponse, VideoHistoryItem
 from backend.tracker import process_video
 from backend.config import OUTPUT_DIR, UPLOAD_DIR
 import asyncio
+from frontend.app import demo
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -29,7 +30,7 @@ app = FastAPI(
     )
 
 app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
-
+app = gr.mount_gradio_app(app, demo, path="/gradio")
 
 @app.get("/health", tags = ["Helth Check"])
 async def health_check():

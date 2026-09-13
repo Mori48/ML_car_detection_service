@@ -1,19 +1,34 @@
-# Виртуальное окружение
-.venv/
-car_detection_env/
+# Виртуальные окружения
+.venv
+car_detection_env
+venv
+env
 
-# MLflow и результаты экспериментов
-mlruns/
+# MLflow, логи и запуски YOLO/Ultralytics
+mlruns
 mlflow.db
-runs/   
+runs
+*.log
 
-# Датасет и временные файлы
-data/
+# Данные, веса моделей и изображения
+data
+weights/*.pt
+*.pt
+*.onnx
 *.png
 *.jpg
+*.jpeg
 
-# Кэш Python и Git
-__pycache__/
+# Кэш Python, Docker, IDE и Git
+__pycache__
 *.pyc
-.git/
+*.pyo
+*.pyd
+.pytest_cache
+.git
 .gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+.vscode
+.idea
