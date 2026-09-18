@@ -1,49 +1,205 @@
-#  Car Detection Service (FastAPI + Gradio + YOLO)
+# Car Detection Service
 
-Микросервисное веб-приложение для автоматической детекции автомобилей на изображениях и видео. Проект развернут в изолированных Docker-контейнерах и готов к локальному или серверному запуску.
+End-to-end computer vision service for automatic car detection in images and videos using YOLO. The application provides a REST API for model inference and a Gradio web interface for interactive usage.
 
-## Технологический стек
-Backend: Python 3.10, FastAPI, Uvicorn, OpenCV, PyTorch, Ultralytics YOLO
+The project is containerized with Docker and consists of separate frontend and backend services communicating through an internal Docker network.
 
-Frontend: Gradio
+## Tech Stack
 
-Infrastructure: Docker, Docker Compose, WSL 2
+**Backend:** Python 3.10, FastAPI, Uvicorn, OpenCV, PyTorch, Ultralytics YOLO
 
-## Архитектура проекта
-Приложение состоит из двух независимых сервисов, взаимодействующих внутри внутренней сети Docker (ml_car_detection_service_default):
+**Frontend:** Gradio
 
-car_backend (Port 8000): FastAPI REST API. Принимает медиафайлы, выполняет инференс нейросетевой модели YOLO, возвращает разметку и метаданные детекции.
+**Infrastructure:** Docker, Docker Compose
 
-car_frontend (Port 7860): Пользовательский веб-интерфейс на Gradio. Позволяет загружать изображения/видео через браузер и просматривать результаты детекции.
+## Architecture
 
+The application consists of two independent services:
 
-## Быстрый запуск (Docker Compose)
-Предварительные требования
-Установленный Docker Desktop (с включенной поддержкой WSL 2 на Windows).
+```text
+┌─────────────────────┐
+│      Browser        │
+│   Gradio UI :7860   │
+└──────────┬──────────┘
+           │ HTTP
+           ▼
+┌─────────────────────┐
+│      Frontend       │
+│       Gradio        │
+└──────────┬──────────┘
+           │ REST API
+           ▼
+┌─────────────────────┐
+│      Backend        │
+│ FastAPI + YOLO      │
+│ OpenCV + PyTorch    │
+└─────────────────────┘
+```
 
-Свободный диск с объемом от 10 ГБ.
+### Backend
 
-1. Клонирование репозитория
-Bash
-git clone [https://github.com/Mori48/ML_car_detection_service.git](https://github.com/Mori48/ML_car_detection_service.git)
+**`car_backend` — port 8000**
+
+FastAPI REST API responsible for:
+
+* receiving image and video files;
+* running YOLO inference;
+* processing media with OpenCV;
+* returning detection results and metadata.
+
+### Frontend
+
+**`car_frontend` — port 7860**
+
+Gradio web interface that allows users to:
+
+* upload images and videos;
+* run car detection;
+* view processed results.
+
+## Model Performance
+
+The YOLO model was trained for 15 epochs and evaluated on the validation set.
+
+| Metric    | Score |
+| --------- | ----: |
+| Precision | 0.554 |
+| Recall    | 0.408 |
+| mAP@50    | 0.427 |
+| mAP@50:95 | 0.265 |
+
+The reported metrics correspond to the validation set after 15 training epochs.
+
+## Project Structure
+
+```text
+ML_car_detection_service/
+│
+├── backend/
+│   └── ...
+│
+├── frontend/
+│   └── ...
+│
+├── data/
+│   └── ...
+│
+├── docker/
+│   ├── Dockerfile.backend
+│   ├── Dockerfile.frontend
+│   └── docker-compose.yml
+│
+├── requirements.txt
+└── README.md
+```
+
+## Installation and Setup
+
+### Prerequisites
+
+Make sure you have installed:
+
+* Docker Desktop
+* Git
+
+On Windows, Docker Desktop should have WSL 2 integration enabled.
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/Mori48/ML_car_detection_service.git
 cd ML_car_detection_service
-2. Сборка и запуск контейнеров
-Запустите проект в фоновом (detached) режиме:
+```
 
-    Bash
-docker-compose up -d --build
+### 2. Build and start the services
 
-3. Проверка статуса
-Убедитесь, что оба контейнера находятся в статусе Up:
+```bash
+docker compose -f docker/docker-compose.yml up -d --build
+```
 
-    Bash
-docker ps
+The first build may take some time because the backend image installs PyTorch and the required ML dependencies.
 
-## Доступ к сервисам
-После успешного запуска сервисы доступны по следующим адресам:
+### 3. Check container status
 
-Веб-интерфейс (Gradio UI): [http://localhost:7860](http://localhost:7860)
+```bash
+docker compose -f docker/docker-compose.yml ps
+```
 
-Интерактивная документация API (Swagger UI): [http://localhost:8000/docs](http://localhost:8000/docs)
+Both services should have a running status.
 
-Альтернативная документация API (ReDoc): [http://localhost:8000/redoc](http://localhost:8000/redoc)
+### 4. Open the application
+
+Gradio web interface:
+
+```text
+http://localhost:7860
+```
+
+FastAPI Swagger documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+FastAPI ReDoc documentation:
+
+```text
+http://localhost:8000/redoc
+```
+
+## API
+
+The backend exposes a REST API through FastAPI.
+
+Interactive API documentation is available at:
+
+```text
+http://localhost:8000/docs
+```
+
+The Swagger UI can be used to inspect available endpoints and send requests directly to the service.
+
+## Useful Docker Commands
+
+### View logs
+
+```bash
+docker compose -f docker/docker-compose.yml logs
+```
+
+View logs for a specific service:
+
+```bash
+docker compose -f docker/docker-compose.yml logs backend
+docker compose -f docker/docker-compose.yml logs frontend
+```
+
+Follow logs in real time:
+
+```bash
+docker compose -f docker/docker-compose.yml logs -f
+```
+
+### Stop the application
+
+```bash
+docker compose -f docker/docker-compose.yml down
+```
+
+### Rebuild the application
+
+```bash
+docker compose -f docker/docker-compose.yml up -d --build
+```
+
+### Restart the services
+
+```bash
+docker compose -f docker/docker-compose.yml restart
+```
+
+## Notes
+
+The application currently runs inference on CPU. GPU acceleration can be configured separately depending on the target environment and Docker/NVIDIA runtime configuration.
+
+
