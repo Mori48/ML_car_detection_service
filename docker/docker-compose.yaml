@@ -1,4 +1,17 @@
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: car_db
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_DB: car_detection
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   backend:
     build:
       context: ..
@@ -6,8 +19,13 @@ services:
     container_name: car_backend
     ports:
       - "8000:8000"
+    environment:
+      # Переопределяем URL для подключения к Postgres внутри Docker-сети
+      DATABASE_URL: postgresql+asyncpg://admin:secretpassword@db:5432/car_detection
     volumes:
       - ../data:/app/data
+    depends_on:
+      - db
 
   frontend:
     build:
@@ -20,3 +38,6 @@ services:
       API_URL: http://backend:8000
     depends_on:
       - backend
+
+volumes:
+  postgres_data:

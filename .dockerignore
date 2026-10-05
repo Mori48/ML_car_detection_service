@@ -13,6 +13,7 @@ runs
 # Данные, веса моделей и изображения
 data
 weights/*.pt
+weights/*.onnx
 *.pt
 *.onnx
 *.png

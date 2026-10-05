@@ -5,7 +5,7 @@ import logging
 import subprocess
 import os
 import imageio_ffmpeg as ffmpeg
-from backend.config import MODEL_PATH, YOLO_CONFIDENCE, ENGINE_PATH
+from backend.config import MODEL_PATH, YOLO_CONFIDENCE, ENGINE_PATH, BASE_DIR
 import asyncio
 import time
 import threading
@@ -14,11 +14,12 @@ import queue
 logging.basicConfig(
     level=logging.WARNING,                     
     filemode="w",                             # "a" — добавлять в конец файла, "w" — перезаписывать при каждом запуске
-    format="%(asctime)s - [%(levelname)s] - %(filename)s:%(lineno)d - %(message)s", # Шаблон строки
-    encoding="utf-8"                          # Чтобы не было проблем с русским языком
+    format="%(asctime)s - [%(levelname)s] - %(filename)s:%(lineno)d - %(message)s", 
+    encoding="utf-8"                          
 )
 
 model = YOLO(str(ENGINE_PATH))
+
 
 def process_video(input_path , output_path ):
     if not MODEL_PATH.exists():
@@ -41,7 +42,6 @@ def process_video(input_path , output_path ):
     track_history = {}
     valid_unique_vehicles = set()
     MIN_FRAMES_TO_CONFIRM = 15
-
     
     while cap.isOpened():
         ret, frame = cap.read()
@@ -50,18 +50,24 @@ def process_video(input_path , output_path ):
 
         
         results = model.track(
-            source=frame,
-            persist=True,
-            conf=YOLO_CONFIDENCE,
-            verbose=False,
-            tracker="botsort.yaml",
-            agnostic_nms=True,
-            classes=[0, 1, 3]    
-        )
-        if hasattr(model, 'predictor') and model.predictor.trackers:
-            tracker = model.predictor.trackers[0]
-            tracker.track_buffer = 200
-            tracker.max_time_lost = 200
+                source=frame,
+                persist=True,
+                conf=YOLO_CONFIDENCE,
+                device=0,
+                verbose=False,
+                tracker="botsort.yaml",
+                agnostic_nms=True,
+                classes=[0, 1, 3]
+                )
+        tracker = model.predictor.trackers[0]
+
+        for track in tracker.tracked_stracks:
+            if track.is_activated and track.smooth_feat is not None:
+                print(
+                    f"ID={track.track_id}, "
+                    f"feat_norm={float((track.smooth_feat ** 2).sum()) ** 0.5:.4f}"
+                )
+        
         if results[0].boxes is not None and results[0].boxes.id is not None:
             current_ids = results[0].boxes.id.int().cpu().tolist()
             for track_id in current_ids:
@@ -88,6 +94,7 @@ def process_video(input_path , output_path ):
     cap.release()
     out.release()
     cv2.destroyAllWindows()
+
 
     try:
         ffmpeg_exe = ffmpeg.get_ffmpeg_exe()
@@ -149,19 +156,20 @@ class ThreadedCamera:
         self.stopped = True
         self.cap.release()
 
-async def stream_video_generator(input_path):
-    
+
+
+async def websocket_video_generator(input_path):
     cap = ThreadedCamera(str(input_path))
     fps_smooth = 0.0
 
     prev_time = time.time()
     track_history = {}
     valid_unique_vehicles = set()
-    MIN_FRAMES_TO_CONFIRM = 15
+    MIN_FRAMES_TO_CONFIRM = 15 
     frame_count = 0
     last_boxes = []
     last_ids = []
-
+    
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -169,51 +177,59 @@ async def stream_video_generator(input_path):
             
         frame = cv2.resize(frame, (854, 480))
         frame_count += 1
-        if frame_count % 2 !=0 :
-            results = model.track(
-                source=frame,
-                persist=True,
-                conf=YOLO_CONFIDENCE,
-                imgsz=480,
-                device=0,
-                max_det=35,
-                verbose=False,
-                tracker="bytetrack.yaml",
-                agnostic_nms=True,
-                classes=[0, 1, 3]    
-            )
+        
+        results = model.track(
+        source=frame,
+        persist=True,
+        conf=YOLO_CONFIDENCE,
+        imgsz=480,
+        device=0,
+        max_det=35,
+        verbose=False,
+        tracker="botsort.yaml",
+        agnostic_nms=True,
+        classes=[0, 1, 3]
+        )
+
+
+        if results[0].boxes is not None and results[0].boxes.id is not None:
+            last_boxes = results[0].boxes.xyxy.int().cpu().tolist()
+            last_ids = results[0].boxes.id.int().cpu().tolist()
+            last_confs = results[0].boxes.conf.float().cpu().tolist()
+            for track_id in last_ids:
+                track_history[track_id] = track_history.get(track_id, 0) + 1
+                if track_history[track_id] >= MIN_FRAMES_TO_CONFIRM:
+                    valid_unique_vehicles.add(track_id)
+        else:
+            last_boxes, last_ids, last_confs = [], [], []
 
         annotated_frame = frame.copy()
 
-        if results[0].boxes is not None and results[0].boxes.id is not None:
-            # Получаем координаты и ID
-            last_boxes = results[0].boxes.xyxy.int().cpu().tolist()
-            last_ids = results[0].boxes.id.int().cpu().tolist()
-        else:
-                last_boxes, last_ids = [], []
-        for box, track_id in zip(last_boxes, last_ids):
-                        x1, y1, x2, y2 = box
-                        track_history[track_id] = track_history.get(track_id, 0) + 1
-                        if track_history[track_id] >= MIN_FRAMES_TO_CONFIRM:
-                            valid_unique_vehicles.add(track_id)
-                        
-                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (255, 144, 30), 2)
-                        cv2.putText(
-                            annotated_frame, 
-                            f"ID: {track_id}", 
-                            (x1, y1 - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 
-                            0.5, 
-                            (255, 144, 30), 
-                            2
-                        )
+        # ОТРИСОВКА 
+        for box, track_id, conf in zip(last_boxes, last_ids, last_confs):
+            # Рисуем только подтвержденные машины, чтобы убрать артефакты и мерцание
+            if track_history.get(track_id, 0) >= MIN_FRAMES_TO_CONFIRM:
+                x1, y1, x2, y2 = box
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (255, 144, 30), 2)
+                cv2.putText(
+                    annotated_frame, 
+                    f"ID: {track_id} Conf: {conf:.2f}",
+                    (x1, y1 - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, 
+                    (255, 144, 30), 
+                    2 
+                )
+
         curr_time = time.time()
         fps = 1 / (curr_time - prev_time)
         prev_time = curr_time
+        
         if fps_smooth == 0.0:
             fps_smooth = fps
         else:
             fps_smooth = 0.9 * fps_smooth + 0.1 * fps
+            
         cv2.putText(
             annotated_frame,
             f"Unique Vehicles: {len(valid_unique_vehicles)}",
@@ -223,7 +239,6 @@ async def stream_video_generator(input_path):
             (0, 255, 0),
             2
         )
-        # 2. Текст FPS (чуть ниже, красным цветом)
         cv2.putText(
             annotated_frame,
             f"FPS: {fps_smooth:.1f}", 
@@ -234,21 +249,16 @@ async def stream_video_generator(input_path):
             2
         )
 
-        _, buffer = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+        # Сжимаем кадр в JPEG 
+        _, buffer = cv2.imencode('.jpg', annotated_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
         frame_bytes = buffer.tobytes()
         
-        yield (b'--frame\r\n'
-            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+        yield frame_bytes
         
         process_time = time.time() - curr_time
-        
-        # Вычисляем, сколько нужно "доспать", чтобы кадр длился ровно 1/30 секунды
-        delay = max(0.001, 0.033 - process_time)
+        delay = max(0.001, 0.03 - process_time)
+        await asyncio.sleep(0.001)
 
-        await asyncio.sleep(delay)
+
     yield len(valid_unique_vehicles)
-    cap.release()    
-    
-
-
-    
+    cap.release()  

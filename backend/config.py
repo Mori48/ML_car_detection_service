@@ -15,7 +15,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "app.db"
-DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
+DB_PATH = BASE_DIR.parent / "app.db"
+DEFAULT_DB_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 
+DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB_URL)
 YOLO_CONFIDENCE = 0.3

@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import io
 from PIL import Image
+import websockets
 from backend.config import OUTPUT_DIR, API_URL
 
 if sys.platform == "win32":
@@ -59,9 +60,10 @@ def process_video_ui(video_path: str):
             fetch_history_ui(),
         )
 
-def stream_video_ui(video_path: str):
+
+async def stream_video_ui(video_path: str):
     """
-    Генератор, который читает потоковый ответ от FastAPI и покадрово обновляет UI
+    Асинхронный генератор, который загружает видео и читает потоковый ответ через WebSocket.
     """
     if not video_path:
         yield None, "Пожалуйста, загрузите видеофайл.", fetch_history_ui()
@@ -70,39 +72,49 @@ def stream_video_ui(video_path: str):
     try:
         filename = Path(video_path).name
         
-        # Сигнализируем UI о начале работы
-        yield None, "Установка соединения...", gr.skip()
+        # 1. Сигнализируем UI о начале работы
+        yield None, "Загрузка видео на сервер...", gr.skip()
 
-        with open(video_path, "rb") as f:
-            files = {"file": (filename, f, "video/mp4")}
-            # Важно: stream=True позволяет читать ответ сервера по частям, не дожидаясь конца
-            response = requests.post(f"{API_URL}/stream_video", files=files, stream=True)
+        # Выполняем загрузку файла в отдельном потоке (to_thread), 
+        # чтобы блокирующий requests не вешал асинхронный event loop Gradio
+        def upload_file():
+            with open(video_path, "rb") as f:
+                files = {"file": (filename, f, "video/mp4")}
+                return requests.post(f"{API_URL}/upload_for_stream", files=files)
+                
+        response = await asyncio.to_thread(upload_file)
 
         if response.status_code != 200:
-            yield None, f"Ошибка потока: {response.status_code}", gr.skip()
+            yield None, f"Ошибка загрузки: {response.text}", gr.skip()
             return
-
-        bytes_data = b''
-        # Читаем поток байтов кусками (чанками)
-        for chunk in response.iter_content(chunk_size=8192):
-            bytes_data += chunk
-            # Ищем маркеры начала (FF D8) и конца (FF D9) JPEG-файла
-            a = bytes_data.find(b'\xff\xd8')
-            b = bytes_data.find(b'\xff\xd9')
             
-            if a != -1 and b != -1:
-                jpg_bytes = bytes_data[a:b+2]
-                bytes_data = bytes_data[b+2:]
-                
-                try:
-                    # Превращаем байты в картинку для Gradio
-                    img = Image.open(io.BytesIO(jpg_bytes))
-                    # Выдаем кадр в интерфейс. gr.skip() значит "не трогать таблицу истории"
-                    yield img, "Стрим идет (Real-time)...", gr.skip()
-                except Exception:
-                    continue
+        record_id = response.json().get("record_id")
 
-        # Когда цикл закончился (видео кончилось), обновляем таблицу из БД
+        # 2. Формируем URL для WebSocket
+        # Заменяем http/https на ws/wss
+        ws_url = API_URL.replace("http://", "ws://").replace("https://", "wss://") + f"/ws/stream/{record_id}"
+        
+        yield None, f"Подключение к стриму (ID: {record_id})...", gr.skip()
+
+        # 3. Подключаемся по WebSocket и читаем кадры
+        async with websockets.connect(ws_url) as websocket:
+            while True:
+                try:
+                    message = await websocket.recv()
+                    
+                    if isinstance(message, bytes):
+                        # Превращаем сырые байты (JPEG) в картинку для Gradio
+                        img = Image.open(io.BytesIO(message))
+                        yield img, "Стрим идет (Real-time)...", gr.skip()
+                    else:
+                        # Если сервер прислал текст (например, итоговое число машин)
+                        pass
+                        
+                except websockets.exceptions.ConnectionClosed:
+                    # Сокет закрыт (видео закончилось)
+                    break
+
+        # 4. Когда цикл закончился, обновляем таблицу из БД (статус поменяется на COMPLETED)
         yield gr.skip(), "Стрим успешно завершен!", fetch_history_ui()
 
     except Exception as e:

@@ -10,3 +10,5 @@ opencv-python-headless
 ultralytics
 imageio-ffmpeg
 pydantic
+asyncpg
+websockets
