@@ -2,6 +2,7 @@
 *.db
 *.sqlite3
 
+.env
 # Виртуальное окружение
 car_detection_env/
 .venv/

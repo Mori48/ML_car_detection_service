@@ -3,7 +3,7 @@ from ultralytics import YOLO
 from  pathlib import Path
 import logging
 import subprocess
-import os
+import os, torch
 import imageio_ffmpeg as ffmpeg
 from backend.config import MODEL_PATH, YOLO_CONFIDENCE, ENGINE_PATH, BASE_DIR
 import asyncio
@@ -18,7 +18,23 @@ logging.basicConfig(
     encoding="utf-8"                          
 )
 
-model = YOLO(str(ENGINE_PATH))
+CUDA = torch.cuda.is_available()
+DEVICE = 0 if CUDA else "cpu"
+USE_TRT = CUDA and os.getenv("USE_TENSORRT", "false") == "true"
+
+def load_model():
+    if USE_TRT:
+        try:
+            if not ENGINE_PATH.exists():
+                exported = YOLO(str(MODEL_PATH)).export(
+                    format="engine", half=True, device=0, imgsz=480)
+                Path(exported).replace(ENGINE_PATH)
+            return YOLO(str(ENGINE_PATH), task="detect")
+        except Exception as e:
+            logging.warning(f"TensorRT недоступен, откат на PyTorch: {e}")
+    return YOLO(str(MODEL_PATH), task="detect")
+
+model = load_model()
 
 
 def process_video(input_path , output_path ):
@@ -50,23 +66,17 @@ def process_video(input_path , output_path ):
 
         
         results = model.track(
-                source=frame,
-                persist=True,
-                conf=YOLO_CONFIDENCE,
-                device=0,
-                verbose=False,
-                tracker="botsort.yaml",
-                agnostic_nms=True,
-                classes=[0, 1, 3]
-                )
+            source=frame,
+            persist=True,
+            conf=YOLO_CONFIDENCE,
+            device=DEVICE,
+            verbose=False,
+            tracker="botsort.yaml",
+            agnostic_nms=True,
+            classes=[0, 1, 3],
+        )
         tracker = model.predictor.trackers[0]
 
-        for track in tracker.tracked_stracks:
-            if track.is_activated and track.smooth_feat is not None:
-                print(
-                    f"ID={track.track_id}, "
-                    f"feat_norm={float((track.smooth_feat ** 2).sum()) ** 0.5:.4f}"
-                )
         
         if results[0].boxes is not None and results[0].boxes.id is not None:
             current_ids = results[0].boxes.id.int().cpu().tolist()
@@ -148,9 +158,12 @@ class ThreadedCamera:
                 time.sleep(0.01)
                 
     def read(self):
-        if self.stopped and self.q.empty():
-            return False, None
-        return True, self.q.get()
+        while True:
+            try:
+                return True, self.q.get(timeout=0.5)
+            except queue.Empty:
+                if self.stopped:
+                    return False, None
 
     def release(self):
         self.stopped = True
@@ -171,25 +184,26 @@ async def websocket_video_generator(input_path):
     last_ids = []
     
     while True:
-        ret, frame = cap.read()
+        ret, frame = await asyncio.to_thread(cap.read)
         if not ret:
             break
             
         frame = cv2.resize(frame, (854, 480))
         frame_count += 1
         
-        results = model.track(
+        results = await asyncio.to_thread(
+        model.track,
         source=frame,
         persist=True,
         conf=YOLO_CONFIDENCE,
         imgsz=480,
-        device=0,
+        device=DEVICE,          
         max_det=35,
         verbose=False,
         tracker="botsort.yaml",
         agnostic_nms=True,
-        classes=[0, 1, 3]
-        )
+        classes=[0, 1, 3],
+    )
 
 
         if results[0].boxes is not None and results[0].boxes.id is not None:

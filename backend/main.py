@@ -2,22 +2,18 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 import aiofiles
 import sys
-
+from fastapi.concurrency import run_in_threadpool
 from fastapi import FastAPI, UploadFile, File, Depends, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import gradio as gr
 from backend.db.database import init_db, get_db
 from backend.db.models import VideoProcessingLog, ProcessingStatus
 from backend.schemas import VideoProcessResponse, VideoHistoryItem
 from backend.tracker import process_video
 from backend.config import OUTPUT_DIR, UPLOAD_DIR
-from fastapi.responses import StreamingResponse
-# from backend.tracker import stream_video_generator
 import asyncio
 from sqlalchemy import update
-from frontend.app import demo
 from fastapi import WebSocket, WebSocketDisconnect
 from backend.tracker import websocket_video_generator
 
@@ -53,7 +49,6 @@ app = FastAPI(
     )
 
 app.mount("/static", StaticFiles(directory=OUTPUT_DIR), name="static")
-app = gr.mount_gradio_app(app, demo, path="/gradio")
 
 @app.get("/health", tags = ["Helth Check"])
 async def health_check():
@@ -95,7 +90,7 @@ async def procces_video_endpoint(
 
     output_path = OUTPUT_DIR / f"processed_{record.id}_{file.filename}"
     try:
-        record.vehicles_count = process_video(input_path, output_path)
+        record.vehicles_count = await run_in_threadpool(process_video, input_path, output_path)
         record.output_path = str(output_path)
         record.status = ProcessingStatus.COMPLETED
     except Exception as e:

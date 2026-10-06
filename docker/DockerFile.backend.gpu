@@ -12,11 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+RUN pip install torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
+    --extra-index-url https://download.pytorch.org/whl/cu124
 
-RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124 && \
-    pip install -r requirements.txt && \
-    pip install tensorrt-cu12
+COPY requirements/back.txt .
+RUN pip install -r back.txt
+
+RUN pip install tensorrt-cu12 onnx
 
 COPY backend ./backend
 

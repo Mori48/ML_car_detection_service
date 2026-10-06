@@ -5,10 +5,16 @@ services:
       dockerfile: docker/Dockerfile.backend.gpu
     environment:
       USE_TENSORRT: "true"
+      ENGINE_PATH: /app/engine_cache/best.engine
+    volumes:
+      - engine_cache:/app/engine_cache
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu] 
+              capabilities: [gpu]
+
+volumes:
+  engine_cache:

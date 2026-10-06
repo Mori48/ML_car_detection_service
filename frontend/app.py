@@ -6,8 +6,8 @@ import sys
 import io
 from PIL import Image
 import websockets
-from backend.config import OUTPUT_DIR, API_URL
-
+import os, tempfile
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -32,7 +32,10 @@ def process_video_ui(video_path: str):
             video_file_path = None
             if output_rel_path:
                 clean_filename = Path(output_rel_path).name
-                video_file_path = str((OUTPUT_DIR / clean_filename).resolve())
+                r = requests.get(f"{API_URL}/static/{clean_filename}", timeout=300)
+                local = Path(tempfile.gettempdir()) / clean_filename
+                local.write_bytes(r.content)
+                video_file_path = str(local)
 
             status_msg = f"Успешно обработано! Статус: {status}"
             count_msg = f"Насчитано транспортных средств: {vehicles_count}"
@@ -212,5 +215,5 @@ if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
         server_port=7860,
-        allowed_paths=[str(OUTPUT_DIR.resolve())],
+        allowed_paths=[tempfile.gettempdir()],
     )

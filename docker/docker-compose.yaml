@@ -31,12 +31,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
 
   frontend:
     build:
@@ -48,8 +42,7 @@ services:
     environment:
       API_URL: http://backend:8000
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
 
 volumes:
   postgres_data:
