@@ -13,6 +13,8 @@ __pycache__/
 # Логи и база MLflow, сырой датасет
 mlruns/
 /weights/
+*.engine
+*.onnix
 mlflow.db
 runs/
 data/train/
