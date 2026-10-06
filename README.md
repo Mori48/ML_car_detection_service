@@ -73,8 +73,8 @@ Stores processing history, file metadata, processing status and vehicle counts. 
 | Item | Value |
 |:---|:---|
 | Architecture | YOLO (Ultralytics) |
-| Training dataset | [FILL: dataset name, e.g. BDD100K] |
-| Detected classes | [FILL: names of classes 0, 1, 3 used in `tracker.py`] |
+| Training dataset |  BDD100K |
+| Detected classes | 'bus', 'car', 'others', 'truck' |
 | Training | 15 epochs, runs tracked in MLflow |
 
 Validation metrics after 15 epochs:
@@ -86,15 +86,30 @@ Validation metrics after 15 epochs:
 | mAP@50 | 0.427 |
 | mAP@50:95 | 0.265 |
 
-### Inference modes
+### Performance
 
-| Mode | Backend | FPS |
-|:---|:---|---:|
-| CPU | PyTorch (`.pt`) | [FILL] |
-| GPU | PyTorch (`.pt`) | [FILL] |
-| GPU | TensorRT (`.engine`, FP16) | [FILL] |
+Two different numbers are reported because they measure different things.
 
-Measured on [FILL: GPU, e.g. NVIDIA RTX 3050 Laptop 4 GB] with [FILL: test video, resolution], streaming mode, `imgsz=480`.
+**Inference throughput** covers the detector and tracker only: no JPEG encoding, no network, no UI. It is measured with `backend/benchmark.py`:
+
+| Mode | Weights | Mean, ms/frame | p95, ms/frame | Throughput, FPS |
+|:---|:---|---:|---:|---:|
+| CPU | PyTorch (`.pt`) | 51 | 95| 19.4|
+| GPU | PyTorch (`.pt`) | 21 | 27.5| 47.8 |
+| GPU | TensorRT (`.engine`, FP16) | 15 | 20.3 | 58.4 |
+
+Measured on [FILL: GPU, e.g. NVIDIA RTX 3050 Laptop 4 GB] with [FILL: test video, resolution], 854x480 input, `imgsz=480`, 300 frames after 30 warm-up frames.
+
+**Displayed stream.** The Gradio interface renders the stream by replacing a still JPEG image on every update. This is not a video transport (no MJPEG, WebRTC or HLS), so the picture in the browser is much less smooth than the model throughput above suggests. Frame rate actually delivered to the UI: [FILL] FPS. The FPS counter drawn on streamed frames is the server-side loop rate, not the smoothness seen in the browser. The streaming tab demonstrates the real-time pipeline; for smooth playback of results use the offline mode, or replace the viewer with a proper video transport.
+
+Run the benchmark inside the backend container:
+
+```bash
+docker compose exec backend python -m backend.benchmark \
+    --video /app/data/videos/test.mp4 --weights /app/data/models/best.pt --device cpu
+```
+
+For GPU modes use `--device 0` with the `.pt` weights or with the cached engine (`/app/engine_cache/best.engine`).
 
 ### TensorRT
 
@@ -228,6 +243,7 @@ docker volume rm docker_engine_cache
 ## Known Limitations
 
 - Tracker state is shared across requests, so the service is designed for one stream at a time.
+- The streaming tab shows frames as a refreshed image in Gradio, so perceived smoothness is far below model throughput (see Performance).
 - CPU mode is intended for functional testing; real-time throughput requires a GPU.
 - Model quality is limited by short training (15 epochs); see metrics above.
 
