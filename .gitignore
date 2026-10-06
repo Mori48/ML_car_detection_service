@@ -1,38 +1,39 @@
-# Базы данных SQLite 
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+car_detection_env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# GPU-specific and intermediate model files
+*.engine
+*.onnx
+yolov8n.pt
+
+# Experiment tracking, logs, databases
+mlruns/
+mlflow.db
+runs/
+*.log
+*.cache
 *.db
 *.sqlite3
 
-.env
-# Виртуальное окружение
-car_detection_env/
-.venv/
-
-# Кэш Python
-__pycache__/
-*.pyc
-
-# Логи и база MLflow, сырой датасет
-mlruns/
-/weights/
-*.engine
-*.onnix
-mlflow.db
-runs/
+# Raw datasets and runtime media
 data/train/
 data/valid/
 data/test/
-*.cache
-
-#Тренировка модели
-train_mlflow.py
-yolov8n.pt
-
-# Тяжелые медиафайлы 
 data/videos/
 data/outputvideos/
+data/**/*.png
+data/**/*.jpg
 *.mp4
 *.avi
-
-# Временные файлы
-*.png
-*.jpg

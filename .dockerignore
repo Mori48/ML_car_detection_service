@@ -1,35 +1,37 @@
-# Виртуальные окружения
+# VCS / IDE
+.git
+.vscode
+.idea
+
+# Environments
 .venv
-car_detection_env
 venv
 env
+car_detection_env
 
-# MLflow, логи и запуски YOLO/Ultralytics
+# Secrets
+**/.env
+
+# Experiment tracking, logs, training runs
 mlruns
 mlflow.db
 runs
-*.log
+**/*.log
 
-# Данные, веса моделей и изображения
+# Data and weights (mounted as volumes at runtime)
 data
-weights/*.pt
-weights/*.onnx
-*.pt
-*.onnx
-*.png
-*.jpg
-*.jpeg
+weights
+**/*.pt
+**/*.onnx
+**/*.engine
+**/*.png
+**/*.jpg
+**/*.jpeg
 
-# Кэш Python, Docker, IDE и Git
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache
-.git
-.gitignore
-.dockerignore
-Dockerfile
-docker-compose.yml
-.vscode
-.idea
+# Python cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+
+README.md

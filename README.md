@@ -1,108 +1,83 @@
 # Car Detection Service
 
-End-to-end computer vision service for automatic car detection and real-time tracking in images and videos using YOLO.
+End-to-end computer vision service for detecting and tracking vehicles in video using YOLO.
 
 The application provides:
 
-- REST API for batch model inference
-- WebSockets for real-time video streaming
-- Gradio web interface for interactive usage
+- REST API for offline video processing
+- WebSocket streaming of annotated frames in real time
+- Gradio web interface
 - PostgreSQL persistence for processing history and vehicle counts
-- TensorRT-optimized inference for real-time processing
+- Optional TensorRT inference on NVIDIA GPUs (the engine is built automatically on first start)
+- CPU and GPU deployment modes selected through Docker Compose files
 
-The project is containerized with Docker and consists of frontend, backend, and PostgreSQL database services communicating through an internal Docker network.
+The project is containerized and consists of three services (frontend, backend, database) communicating through an internal Docker network.
 
 ## Tech Stack
 
-**Backend**
+**Backend:** Python 3.10, FastAPI, Uvicorn, OpenCV, PyTorch, Ultralytics YOLO, TensorRT (GPU mode), WebSockets, SQLAlchemy, asyncpg
 
-- Python 3.10
-- FastAPI
-- Uvicorn
-- OpenCV
-- PyTorch
-- Ultralytics YOLO
-- TensorRT
-- WebSockets
-- SQLAlchemy
-- asyncpg
+**Frontend:** Gradio
 
-**Frontend**
+**Database:** PostgreSQL 15
 
-- Gradio
+**Experiment tracking (training):** MLflow
 
-**Database**
-
-- PostgreSQL 15
-
-**Infrastructure**
-
-- Docker
-- Docker Compose
+**Infrastructure:** Docker, Docker Compose
 
 ## Architecture
-
-The application consists of three independent services:
 
 ```text
 ┌─────────────────────┐
 │       Browser       │
-│   Gradio UI :7860   │
 └──────────┬──────────┘
-           │ HTTP / WS
+           │ HTTP
            ▼
 ┌─────────────────────┐
 │      Frontend       │
-│       Gradio        │
+│  Gradio UI :7860    │
 └──────────┬──────────┘
-           │ REST API / WS
+           │ REST API / WebSocket
            ▼
 ┌─────────────────────┐      ┌─────────────────────┐
 │      Backend        │      │      Database       │
-│ FastAPI + YOLO(TRT) │◄────►│     PostgreSQL      │
+│ FastAPI + YOLO      │◄────►│     PostgreSQL      │
 │ OpenCV + WebSockets │      │        :5432        │
+│        :8000        │      │                     │
 └─────────────────────┘      └─────────────────────┘
 ```
 
-### Backend
+### Backend (`car_backend`, port 8000)
 
-**`car_backend` — port 8000**
+- accepts video uploads (`.mp4`, `.avi`, `.mov`);
+- runs YOLO detection with multi-object tracking;
+- offline mode: processes the whole video and serves the annotated result from `/static`;
+- streaming mode: sends JPEG frames with boxes, track IDs and FPS over a WebSocket;
+- counts unique vehicles and stores processing history in PostgreSQL;
+- marks interrupted sessions as failed on startup.
 
-The FastAPI backend is responsible for:
+### Frontend (`car_frontend`, port 7860)
 
-- receiving image and video files;
-- running optimized YOLO inference using PyTorch/TensorRT;
-- handling real-time video streaming via WebSockets;
-- performing object tracking;
-- processing media with OpenCV;
-- saving processing history, metadata, and vehicle counts to PostgreSQL.
+- offline analysis tab: upload a video, get the annotated result;
+- real-time tab: live annotated stream with FPS and vehicle counter;
+- processing history table.
 
-### Frontend
+The frontend communicates with the backend only over HTTP/WebSocket (`API_URL`), so it does not share code or files with the backend.
 
-**`car_frontend` — port 7860**
+### Database (`car_db`, port 5432, localhost only)
 
-The Gradio web interface allows users to:
+Stores processing history, file metadata, processing status and vehicle counts. Data is persisted in a Docker volume.
 
-- upload images and videos;
-- connect to live video streams;
-- view real-time bounding boxes;
-- view processed results and processing logs.
+## Model
 
-### Database
+| Item | Value |
+|:---|:---|
+| Architecture | YOLO (Ultralytics) |
+| Training dataset | [FILL: dataset name, e.g. BDD100K] |
+| Detected classes | [FILL: names of classes 0, 1, 3 used in `tracker.py`] |
+| Training | 15 epochs, runs tracked in MLflow |
 
-**`car_db` — port 5432**
-
-PostgreSQL stores:
-
-- processing history;
-- processing metadata;
-- detected vehicle counts.
-
-Database data is persisted using Docker volumes and is therefore preserved across normal container restarts.
-
-## Model Performance & Optimization
-
-The YOLO model was trained for **15 epochs** and evaluated on the validation set.
+Validation metrics after 15 epochs:
 
 | Metric | Score |
 |:---|---:|
@@ -111,52 +86,50 @@ The YOLO model was trained for **15 epochs** and evaluated on the validation set
 | mAP@50 | 0.427 |
 | mAP@50:95 | 0.265 |
 
-The reported metrics correspond to the validation set after 15 training epochs.
+### Inference modes
 
-### TensorRT Optimization
+| Mode | Backend | FPS |
+|:---|:---|---:|
+| CPU | PyTorch (`.pt`) | [FILL] |
+| GPU | PyTorch (`.pt`) | [FILL] |
+| GPU | TensorRT (`.engine`, FP16) | [FILL] |
 
-For real-time inference, the trained YOLO model can be converted to TensorRT `.engine` format.
+Measured on [FILL: GPU, e.g. NVIDIA RTX 3050 Laptop 4 GB] with [FILL: test video, resolution], streaming mode, `imgsz=480`.
 
-TensorRT is used to reduce inference overhead and improve throughput compared with running the model directly from PyTorch weights.
+### TensorRT
 
-### Tracking
+In GPU mode the service exports the weights to a TensorRT engine on first start and caches it in a Docker volume (`engine_cache`). Engines are specific to the GPU and TensorRT version, so they are never stored in the repository (`*.engine` is git-ignored). If the engine cannot be loaded, the service falls back to PyTorch.
 
-The service supports object tracking for video streams.
+## Tracking
 
-The default tracking configuration uses **ByteTrack**, selected for its balance between tracking stability and real-time performance.
+Tracking uses the Ultralytics **BoT-SORT** tracker (`botsort.yaml`).
 
-Experiments were also performed with custom **BoT-SORT** configurations, including:
-
-- extended track buffers;
-- appearance-based ReID;
-- custom matching thresholds;
-- different tracking parameters for handling temporary vehicle occlusions.
-
-For the current operational dataset, ByteTrack provided the best stability-to-speed ratio.
-
-The experimental tracker configuration files are preserved in the repository to document the tracking optimization process.
+A track is counted as a unique vehicle only after it has been observed for at least 15 frames. This suppresses short-lived false positives and ID flicker. In streaming mode only confirmed tracks are drawn.
 
 ## Project Structure
 
 ```text
 ML_car_detection_service/
-│
 ├── backend/
-│   ├── db/
-│   └── ...
-│
+│   ├── db/                  # SQLAlchemy models and database setup
+│   ├── main.py              # FastAPI app, REST and WebSocket endpoints
+│   ├── tracker.py           # model loading, detection, tracking, streaming
+│   ├── config.py
+│   └── schemas.py
 ├── frontend/
-│   └── ...
-│
-├── data/
-│   └── ...
-│
+│   ├── app.py               # Gradio interface
+│   └── config.py
+├── data/                    # model weights, uploads, processed videos
+├── requirements/
+│   ├── back.txt
+│   └── front.txt
 ├── docker/
-│   ├── Dockerfile.backend
+│   ├── Dockerfile.backend       # CPU image
+│   ├── Dockerfile.backend.gpu   # CUDA + TensorRT image
 │   ├── Dockerfile.frontend
-│   └── docker-compose.yml
-│
-├── requirements.txt
+│   ├── docker-compose.yaml
+│   ├── docker-compose.gpu.yaml  # GPU override
+│   └── .env.example
 └── README.md
 ```
 
@@ -164,134 +137,103 @@ ML_car_detection_service/
 
 ### Prerequisites
 
-Make sure you have installed:
-
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (on Windows with WSL 2 integration)
 - [Git](https://git-scm.com/)
+- For GPU mode: an NVIDIA GPU with a recent driver and Docker GPU support. Check it with:
 
-On Windows, Docker Desktop should have **WSL 2 integration** enabled.
-
-For TensorRT GPU acceleration, an NVIDIA GPU and the corresponding Docker NVIDIA runtime configuration are required.
+```bash
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
 
 ### 1. Clone the repository
 
 ```bash
 git clone https://github.com/Mori48/ML_car_detection_service.git
-cd ML_car_detection_service
+cd ML_car_detection_service/docker
 ```
 
-### 2. Build and start the services
+### 2. Configure the environment
+
+Create `docker/.env` from the example and set your own database password:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d --build
+cp .env.example .env        # Windows (cmd/PowerShell): copy .env.example .env
 ```
 
-The first build may take some time because the backend image installs PyTorch and the required machine learning dependencies.
+```text
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=change_me
+POSTGRES_DB=car_detection
+```
 
-### 3. Check container status
+### 3a. Run on CPU
 
 ```bash
-docker compose -f docker/docker-compose.yml ps
+docker compose up -d --build
 ```
 
-The backend, frontend, and database containers should be running.
+### 3b. Run on GPU (TensorRT)
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.gpu.yaml up -d --build
+```
+
+On the first GPU start the TensorRT engine is built, which can take several minutes. Follow progress with:
+
+```bash
+docker compose logs -f backend
+```
+
+Subsequent starts load the cached engine in seconds.
 
 ### 4. Open the application
 
-**Gradio web interface**
-
-```text
-http://localhost:7860
-```
-
-**FastAPI Swagger documentation**
-
-```text
-http://localhost:8000/docs
-```
-
-**FastAPI ReDoc documentation**
-
-```text
-http://localhost:8000/redoc
-```
+| Service | URL |
+|:---|:---|
+| Web interface | http://localhost:7860 |
+| API docs (Swagger) | http://localhost:8000/docs |
+| Health check | http://localhost:8000/health |
 
 ## API
 
-The backend exposes a REST API through FastAPI.
+| Method | Endpoint | Description |
+|:---|:---|:---|
+| `POST` | `/process_video` | Upload a video, process it offline, return count and result path |
+| `POST` | `/upload_for_stream` | Upload a video for streaming, returns `record_id` |
+| `WS` | `/ws/stream/{record_id}` | Stream annotated JPEG frames, final message is the vehicle count |
+| `GET` | `/history` | Processing history |
+| `GET` | `/health` | Service health |
+| `GET` | `/static/{file}` | Processed videos |
 
-Interactive API documentation is available through Swagger UI:
-
-```text
-http://localhost:8000/docs
-```
-
-Swagger UI can be used to inspect available endpoints and send requests directly to the service.
-
-FastAPI also provides ReDoc documentation:
-
-```text
-http://localhost:8000/redoc
-```
+Interactive documentation: http://localhost:8000/docs
 
 ## Useful Docker Commands
 
-### View logs
-
-View logs for all services:
+Run from the `docker/` directory (add `-f docker-compose.yaml -f docker-compose.gpu.yaml` in GPU mode).
 
 ```bash
-docker compose -f docker/docker-compose.yml logs
+docker compose ps                  # container status
+docker compose logs -f backend     # follow backend logs
+docker compose restart backend     # restart a service
+docker compose down                # stop, keep database data
+docker compose down -v             # stop and delete database data (warning!)
 ```
 
-View logs for a specific service:
+Rebuild the TensorRT engine (for example after replacing the weights):
 
 ```bash
-docker compose -f docker/docker-compose.yml logs backend
-docker compose -f docker/docker-compose.yml logs frontend
-docker compose -f docker/docker-compose.yml logs db
+docker volume rm docker_engine_cache
 ```
 
-Follow logs in real time:
+## Known Limitations
 
-```bash
-docker compose -f docker/docker-compose.yml logs -f
-```
-
-### Stop the application
-
-Stop all services while preserving database volumes:
-
-```bash
-docker compose -f docker/docker-compose.yml down
-```
-
-### Stop the application and remove database volumes
-
-> Warning: this removes persisted database data.
-
-```bash
-docker compose -f docker/docker-compose.yml down -v
-```
-
-### Rebuild the application
-
-Use this after changing application code or dependencies:
-
-```bash
-docker compose -f docker/docker-compose.yml up -d --build
-```
-
-### Restart the services
-
-```bash
-docker compose -f docker/docker-compose.yml restart
-```
+- Tracker state is shared across requests, so the service is designed for one stream at a time.
+- CPU mode is intended for functional testing; real-time throughput requires a GPU.
+- Model quality is limited by short training (15 epochs); see metrics above.
 
 ## Notes
 
-- The application is designed as a containerized multi-service system.
 - Frontend and backend communicate through the Docker Compose network.
-- PostgreSQL data is persisted using Docker volumes.
+- PostgreSQL data is persisted in a Docker volume.
 - TensorRT acceleration requires a compatible NVIDIA GPU and Docker GPU configuration.
-- Custom tracker configurations are retained in the repository as part of the project's experimental tracking work.
+- Secrets are read from `docker/.env`, which is git-ignored.
